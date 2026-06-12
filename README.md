@@ -62,13 +62,13 @@ the HS segment (default 12, matching the junction window in the paper).
 
 **3. Classification inference** — `model/`, `model_inference.ipynb`
 
-# TODO
+TODO
 
 ## Requirements
 
 - CLI tools: `awscli`, `samtools`, `minimap2`
-- Python: `pod5`, `pysam`, `h5py`, `numpy`, `tqdm`, and the framework used by `model/`
+- Python: `pod5`, `pysam`, `h5py`, `numpy`, `tqdm`
 
 ## Data & citation
 
-# TODO
+TODO
