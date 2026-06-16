@@ -5,22 +5,16 @@ Single-pass extraction of trimmed nanopore signals to HDF5.
 For each BAM file in --bam-dir (one file == one label), match reads against the
 shared POD5 dataset in --pod5-dir, trim each read's signal to the reference
 window defined by --tnre / --tre, and stream the result straight into one HDF5
-file. Signals are streamed to disk with a chunk-aligned buffer, so peak memory
-stays around one chunk (~4 MB) regardless of total dataset size.
+file..
 
 HDF5 layout
 -----------
-    signals     : float32 1D, all reads' signals concatenated
+    signals     : int16 1D, all reads' signals concatenated
     offsets     : int64, length n_reads + 1; read i == signals[offsets[i]:offsets[i+1]]
     read_ids    : vlen str, length n_reads
-    labels      : int64,   length n_reads; 1-based label per read (1..N by sorted BAM order)
+    labels      : int64,   length n_reads; 0-based label per read (0..N-1 by sorted BAM order)
 
-Example
--------
-    python extract_signals_to_h5.py \
-        --bam-dir  ../../sepsis/raw_data/009/aligned_bams_wopa \
-        --pod5-dir ../../sepsis/raw_data/009/03_10_26_.../pod5 \
-        --out      ../Data/signals/009_wopa_tnre12_tre12.h5
+NOTE labels are 0-based (enumerate starts at 0)
 """
 
 import argparse
@@ -33,6 +27,9 @@ import numpy as np
 import pod5
 import pysam
 from tqdm import tqdm
+
+
+META_CHUNK = 65536
 
 
 # --------------------------------------------------------------------------- #
@@ -68,7 +65,7 @@ def get_query_to_signal(
     bam_read: pysam.AlignedSegment, pod_read: pod5.ReadRecord
 ) -> np.ndarray:
     ts = extract_ts_tag(bam_read)
-    ns = pod_read.signal_pa.shape[0]
+    ns = pod_read.signal.shape[0]
     move_table = bam_read.get_tag("mv")
     stride, moves = move_table[0], move_table[1:]
     return moves_to_base_indices(moves, stride, ts, ns)
@@ -114,7 +111,7 @@ def process_bam(
 ):
     """
     Returns (read_ids, signals, stats) for one BAM.
-    signals is a list of float32 arrays aligned with read_ids.
+    signals is a list of int16 arrays aligned with read_ids.
     """
     bam_reads = get_bam_reads(bam_path)
     read_ids = [r.query_name for r in bam_reads]
@@ -132,7 +129,7 @@ def process_bam(
 
     for bam_read in tqdm(
         bam_reads, desc=name, unit="read",
-        position=1, leave=False,  # spawn under the overall bar, destroy when done
+        position=1, leave=False,
     ):
         rid = bam_read.query_name
         pod_read = pod_map.get(rid)
@@ -156,7 +153,7 @@ def process_bam(
             continue
 
         trimmed = np.asarray(
-            pod_read.signal_pa[signal_start:signal_end], dtype=np.float32
+            pod_read.signal[signal_start:signal_end], dtype=np.int16
         )
         if len(trimmed) < min_len:
             continue
@@ -237,17 +234,20 @@ def run(bam_dir, pod5_dir, out_path, tnre, tre, min_len, chunk):
 
         signals_ds = h5.create_dataset(
             "signals", shape=(0,), maxshape=(None,),
-            dtype=np.float32, chunks=(chunk,),
+            dtype=np.int16, chunks=(chunk,),
         )
         offsets_ds = h5.create_dataset(
-            "offsets", shape=(1,), maxshape=(None,), dtype=np.int64
+            "offsets", shape=(1,), maxshape=(None,), dtype=np.int64,
+            chunks=(META_CHUNK,),
         )
         offsets_ds[0] = 0
         ids_ds = h5.create_dataset(
-            "read_ids", shape=(0,), maxshape=(None,), dtype=str_dt
+            "read_ids", shape=(0,), maxshape=(None,), dtype=str_dt,
+            chunks=(META_CHUNK,),
         )
         labels_ds = h5.create_dataset(
-            "labels", shape=(0,), maxshape=(None,), dtype=np.int64
+            "labels", shape=(0,), maxshape=(None,), dtype=np.int64,
+            chunks=(META_CHUNK,),
         )
 
         sig_buf = _ChunkBuffer(signals_ds, chunk)
@@ -256,7 +256,7 @@ def run(bam_dir, pod5_dir, out_path, tnre, tre, min_len, chunk):
         n_bams = 0
 
         for label, bam_path in enumerate(
-            tqdm(bam_paths, desc="BAMs", position=0, leave=True), start=1
+            tqdm(bam_paths, desc="BAMs", position=0, leave=True), start=0
         ):
             name = osp.splitext(osp.basename(bam_path))[0]
 
@@ -272,11 +272,9 @@ def run(bam_dir, pod5_dir, out_path, tnre, tre, min_len, chunk):
                 continue
             n_bams += 1
 
-            # signals -> chunk-aligned streaming buffer (bounded memory)
             for s in sigs:
                 sig_buf.add(s)
 
-            # per-read metadata -> tiny per-BAM batch appends
             lengths = np.fromiter((len(s) for s in sigs), dtype=np.int64, count=len(sigs))
             ends = cursor + np.cumsum(lengths)
             cursor = int(ends[-1])
@@ -293,7 +291,7 @@ def run(bam_dir, pod5_dir, out_path, tnre, tre, min_len, chunk):
         raise SystemExit("No valid reads extracted; nothing to write.")
 
     print(f"\nDone -> {out_path}")
-    print(f"  {n_reads} reads across {n_bams} labels")
+    print(f"  {n_reads} reads across {n_bams} labels (labels are 0..{n_bams - 1})")
 
 
 # --------------------------------------------------------------------------- #
@@ -317,7 +315,7 @@ def parse_args():
                    help="Minimum trimmed signal length to keep. Default 18.")
     p.add_argument("--chunk", type=int, default=1_000_000,
                    help="HDF5 signal chunk size in samples; also caps peak RAM "
-                        "for the signal buffer (~4 bytes each). Default 1,000,000 (~4 MB).")
+                        "for the signal buffer (~2 bytes each, int16). Default 1,000,000.")
     return p.parse_args()
 
 
