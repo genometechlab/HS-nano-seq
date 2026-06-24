@@ -6,10 +6,14 @@
 #   3. align barcode01..16 (preserving tags) -> sorted, indexed BAMs
 #
 # Requires: awscli, samtools, minimap2 on PATH.
+#
+# THREADS can be overridden from the environment, e.g.
+#   THREADS=16 bash data_preparation.sh
+# (run_all.sh sets it from its --threads option.)
 
 set -euo pipefail
 
-THREADS=32
+THREADS="${THREADS:-32}"
 
 DATA="./Data"
 SYN="$DATA/synthetics"
@@ -42,17 +46,17 @@ aws s3 sync \
 # --------------------------------------------------------------------------- #
 echo "==> [2/3] writing + indexing reference"
 mkdir -p "$REF_DIR"
-cat > "$REF" << 'EOF'
+cat > "$REF" << 'FASTA'
 >DNA_HS_DNA
 TACGAGCGGTTGAGAAAGCTACGCCCGCGAATTACAGAGCGCACGGTTTTATTCTTACTTCTTGCCTCGGTGCGAACTGTATGAACTACTACTCCAGTGCTACGAGTTGCCGAAGAACTGA
-EOF
+FASTA
 samtools faidx "$REF"          # creates DNA_HS_DNA.fa.fai
 # (minimap2 builds its index on the fly for a reference this small; no .mmi needed)
 
 # --------------------------------------------------------------------------- #
 # 3. Align bc01..bc16, per experiment handle
 # --------------------------------------------------------------------------- #
-echo "==> [3/3] aligning barcodes 01..16 per experiment"
+echo "==> [3/3] aligning barcodes 01..16 per experiment (threads=$THREADS)"
 
 for handle in "${HANDLES[@]}"; do
     if [[ -z "$handle" ]]; then
