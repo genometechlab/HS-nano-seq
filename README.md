@@ -12,14 +12,24 @@ side is isolated and fed to a transformer classifier. This repo covers the
 
 To reproduce the exact results reported in the paper, run the three pipeline stages below in order.
 
+> [!WARNING]
+> You can reproduce everything in one shot with `bash run_all.sh` — it runs all four
+> stages in order (download/align → trim → infer → figures) and writes the
+> confusion-matrix figures to the project root. It accepts options such as
+> `--threads`, `--batch-size`, `--num-workers`, `--force-cpu`, `--skip-prep`,
+> `--skip-trimming`, and `--skip-inference` (see `bash run_all.sh --help`).
+> Otherwise, follow the stages below manually.
+
 ## Repository structure
 
 ```
 .
 ├── Data/                    # populated by data_preparation.sh
 │   ├── references/          # DNA_HS_DNA.fa (concatenated NRE+RE adapters) + index
+│   ├── results/             # per-experiment prediction pickles (written by inference)
 │   └── synthetics/          # downloaded BAMs, aligned BAMs, Pod5s, model_weights/, etc.
 │       └── model_weights/   # trained model checkpoint (.pth)
+├── run_all.sh               # one-shot: runs every stage + writes figures
 ├── data_preparation.sh      # download → build reference → align barcodes
 ├── signal_trimming.py       # aligned BAM + POD5 → trimmed signals in HDF5
 ├── model/                   # Model related scripts
@@ -125,23 +135,29 @@ there are no architecture flags.
 python model_inference.py \
     --h5            Data/synthetics/signals/9fea1263-540e-4cc6-ad49-9e80276dca2b.h5 \
     --model-weights Data/synthetics/model_weights/synthetics_classifier.pth \
-    --out           results/9fea1263-540e-4cc6-ad49-9e80276dca2b.pkl
+    --out           Data/results/9fea1263-540e-4cc6-ad49-9e80276dca2b.pkl
 
 # handle YYYYYY
 python model_inference.py \
     --h5            Data/synthetics/signals/266e1025-91a2-48d9-a168-6386828065f6.h5 \
     --model-weights Data/synthetics/model_weights/synthetics_classifier.pth \
-    --out           results/266e1025-91a2-48d9-a168-6386828065f6.pkl
+    --out           Data/results/266e1025-91a2-48d9-a168-6386828065f6.pkl
 ```
 
 ---
 
 ### 4. Results — `results.ipynb`
 
-Loads the prediction pickle and plots confusion matrixes
-per experiment. Matrices are row-normalized (each row ÷ its total, so the diagonal is
-per-class recall) and annotated with recall and raw count per cell; axes are labeled
-BC01–BC16 (class 0 → BC01, … class 15 → BC16).
+Loads the prediction pickles from `Data/results/` and plots a confusion matrix per
+experiment. For the experiment the model was trained on, the train/val/test split in
+`Data/synthetics/split_dict.pkl` is used to draw one panel per subset; the held-out
+experiment is plotted as a single test panel over all its reads. Matrices are
+row-normalized (each row ÷ its total, so the diagonal is per-class recall) and
+annotated with recall and raw count per cell; axes are labeled BC01–BC16 (class 0 →
+BC01, … class 15 → BC16).
+
+Running `run_all.sh` produces the same figures non-interactively as
+`confusion_matrix_<handle>.png` in the project root.
 
 ## Requirements
 
