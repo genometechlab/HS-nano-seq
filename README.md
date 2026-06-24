@@ -82,7 +82,7 @@ file.
 ```
 
 ```bash
-# handle XXXX
+# handle 9fea1263-540e-4cc6-ad49-9e80276dca2b
 python signal_trimming.py \
     --bam-dir  Data/synthetics/aligned_bams/9fea1263-540e-4cc6-ad49-9e80276dca2b \
     --pod5-dir Data/synthetics/03_10_26_NBD114_TT_PH009_fig004_BC1_16/20260310_1620_1G_PBG61569_9fea1263 \
@@ -90,7 +90,7 @@ python signal_trimming.py \
     --tnre 12 \
     --tre 12
 
-# handle YYYYYY
+# handle 266e1025-91a2-48d9-a168-6386828065f6
 python signal_trimming.py \
     --bam-dir  Data/synthetics/aligned_bams/266e1025-91a2-48d9-a168-6386828065f6 \
     --pod5-dir Data/synthetics/03_10_26_NBD114_TT_PH009_fig004_BC1_16/20260310_1512_1G_PBG61569_266e1025 \
@@ -131,13 +131,13 @@ there are no architecture flags.
 ```
 
 ```bash
-# handle XXXX
+# handle 9fea1263-540e-4cc6-ad49-9e80276dca2b
 python model_inference.py \
     --h5            Data/synthetics/signals/9fea1263-540e-4cc6-ad49-9e80276dca2b.h5 \
     --model-weights Data/synthetics/model_weights/synthetics_classifier.pth \
     --out           Data/results/9fea1263-540e-4cc6-ad49-9e80276dca2b.pkl
 
-# handle YYYYYY
+# handle 266e1025-91a2-48d9-a168-6386828065f6
 python model_inference.py \
     --h5            Data/synthetics/signals/266e1025-91a2-48d9-a168-6386828065f6.h5 \
     --model-weights Data/synthetics/model_weights/synthetics_classifier.pth \
