@@ -1,3 +1,3 @@
-from .transformer_multitask_zam_cls_only import TransformerZAM_multitask_CLSOnly
+from .zap_model import TransformerZAP
 from .factory.positional_encodings import *
 from .factory.transformer_encoder import TransformerEncoderWrapper
