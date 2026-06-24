@@ -31,7 +31,7 @@ from torch.utils.data import DataLoader
 
 sys.path.append("../")
 
-from model import TransformerZAM_multitask_CLSOnly
+from model import TransformerZAP
 
 
 # --------------------------------------------------------------------------- #
@@ -196,7 +196,7 @@ def load_checkpoint(weights_path, device):
 
 
 def init_model(cfg):
-    model = TransformerZAM_multitask_CLSOnly(
+    model = TransformerZAP(
         input_size=cfg.chunk_size,
         max_seq_len=cfg.max_seq_len,
         num_classes=cfg.num_classes,
