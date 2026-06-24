@@ -10,59 +10,84 @@ the HS-associated current segment plus the 12 nt HS–DNA junction window on eac
 side is isolated and fed to a transformer classifier. This repo covers the
 16-way synthetic-standard classification.
 
+To reproduce the exact results reported in the paper, run the three pipeline stages below in order.
+
 ## Repository structure
 
 ```
 .
-├── Data/                    # Will be available after running the data_preparation script
+├── Data/                    # populated by data_preparation.sh
 │   ├── references/          # DNA_HS_DNA.fa (concatenated NRE+RE adapters) + index
-│   ├── synthetics/          # downloaded BAMs, aligned BAMs, Pod5s, etc.
-│   └── model_weights/       # trained model weights (.pth)
-├── data_preperation.sh      # download → build reference → align barcodes
+│   └── synthetics/          # downloaded BAMs, aligned BAMs, Pod5s, model_weights/, etc.
+│       └── model_weights/   # trained model checkpoint (.pth)
+├── data_preparation.sh      # download → build reference → align barcodes
 ├── signal_trimming.py       # aligned BAM + POD5 → trimmed signals in HDF5
 ├── model/                   # Model related scripts
 │   ├── factory/
 │   ├── transformer_multitask_zam_cls_only.py
 │   └── __init__.py
-├── model_inference.ipynb    # run a trained model on trimmed signals → predictions
+├── model_inference.py       # run a trained model on trimmed signals → predictions
 └── results.ipynb            # confusion matrices / per-class recall from predictions
 ```
 
 ## Pipeline
 
-The workflow runs in three stages.
+### 1. Data preparation — `data_preparation.sh`
 
-**1. Data preparation** — `data_preperation.sh`
+Downloads the basecalled per-barcode BAMs, the shared POD5 dataset, and the trained
+model checkpoint from the public S3 bucket into `Data/synthetics/`, writes the two 60 bp DNA adapters as the
+`DNA_HS_DNA` reference into `Data/references/` and indexes it, then aligns each
+barcode (bc01–bc16) of every experiment with `minimap2`, preserving the `mv` and `ts`
+tags that stage 2 relies on. Aligned BAMs land in `Data/synthetics/aligned_bams/<handle>/`.
 
-Downloads the basecalled, per-barcode BAMs from the public S3 bucket and the trained
-model checkpoint (into `Data/model_weights/`), writes the `DNA_HS_DNA` reference (the
-two DNA adapter sequences, 60 bp each) and indexes it, then aligns each barcode
-(bc01–bc16) with `minimap2`.
+Configure it by editing the variables at the top of the script before running:
 
-```bash
-bash data_preperation.sh
+```
+THREADS   threads passed to samtools / minimap2
 ```
 
-Aligned BAMs land in `Data/synthetics/aligned_bams/<handle>/`, where `<handle>` is
-the experiment id.
+```bash
+sbatch data_preparation.sh
+```
 
-**2. Signal trimming** — `signal_trimming.py`
+---
 
-For each aligned BAM (one barcode = one label) and the shared POD5 dataset,
-maps each read's HS-flanking reference window back to raw signal via the basecaller
-move table, trims the signal, and writes the result into a single HDF5 file.
+### 2. Signal trimming — `signal_trimming.py`
+
+Takes one experiment's aligned BAMs (one barcode = one label) plus the shared POD5
+dataset, maps each read's HS-flanking reference window back to raw signal via the
+basecaller move table, trims the signal, and writes everything into a single HDF5
+file.
+
+```
+--bam-dir    (required)  directory of per-barcode BAMs for one handle; one file = one label
+--pod5-dir   (required)  shared POD5 dataset directory, read recursively
+--out        (required)  output .h5 path
+--tnre       (int, 12)   nucleotides of NRE (left) adapter to keep beside the HS segment
+--tre        (int, 12)   nucleotides of RE (right) adapter to keep beside the HS segment
+--min-len    (int, 18)   minimum trimmed signal length to keep; set this >= the model's
+                         chunk_size, or short reads survive here and crash stage 3
+--chunk      (int, 1e6)  HDF5 signal chunk size in samples; also caps peak RAM for the
+                         signal buffer (~2 bytes per sample)
+```
 
 ```bash
+# handle XXXX
 python signal_trimming.py \
-    --bam-dir  Data/synthetics/aligned_bams/<handle> \
-    --pod5-dir Data/synthetics/<pod5_dir> \
-    --out      Data/synthetics/signals/standards.h5 \
+    --bam-dir  Data/synthetics/aligned_bams/9fea1263-540e-4cc6-ad49-9e80276dca2b \
+    --pod5-dir Data/synthetics/03_10_26_NBD114_TT_PH009_fig004_BC1_16/20260310_1620_1G_PBG61569_9fea1263 \
+    --out      Data/synthetics/signals/9fea1263-540e-4cc6-ad49-9e80276dca2b.h5 \
+    --tnre 12 \
+    --tre 12
+
+# handle YYYYYY
+python signal_trimming.py \
+    --bam-dir  Data/synthetics/aligned_bams/266e1025-91a2-48d9-a168-6386828065f6 \
+    --pod5-dir Data/synthetics/03_10_26_NBD114_TT_PH009_fig004_BC1_16/20260310_1512_1G_PBG61569_266e1025 \
+    --out      Data/synthetics/signals/266e1025-91a2-48d9-a168-6386828065f6.h5 \
     --tnre 12 \
     --tre 12
 ```
-
-`--tnre`/`--tre` set how many nucleotides of NRE/RE adapter to keep on each side of
-the HS segment (default 12, matching the junction window in the paper).
 
 The output HDF5 has four datasets, all aligned by read position `i`:
 
@@ -73,21 +98,50 @@ read_ids  vlenstr 1D   length n_reads
 labels    int64   1D   length n_reads; 0-based label (0..15) by sorted BAM order
 ```
 
-Labels are **0-based**: barcode BC01 → class 0, …, BC16 → class 15.
+Labels are 0-based and positional (sorted BAM filename order): BC01 → class 0, …,
+BC16 → class 15. Make sure all 16 `*_bcNN.bam` files are present in the handle
+directory before trimming, or the mapping shifts.
 
-**3. Inference & results** — `model_inference.ipynb`, `results.ipynb`
+---
 
-`model_inference.ipynb` streams **every read** in an HDF5 file through the trained
-checkpoint (`Data/model_weights/`) and writes a prediction dict to a pickle:
+### 3. Inference — `model_inference.py`
 
-```python
-{ read_id (str): {"gt": int, "pred": int}, ... }   # gt / pred are 0-based (0..15)
+Streams every read in an HDF5 file through the trained checkpoint and writes a
+prediction dict to a pickle, `{ read_id: {"gt": int, "pred": int} }` (gt/pred are
+0-based, 0..15). The architecture is read from the checkpoint's own `config`, so
+there are no architecture flags.
+
+```
+--h5             (required)        path to the HDF5 signal file from stage 2
+--model-weights  (required)        self-describing .pth (state_dict + config)
+--out            (preds.pkl)       output pickle path
+--batch-size     (int, 512)        reads per forward pass
+--num-workers    (int, 4)          DataLoader worker processes
+--force-cpu      (flag)            run on CPU even if a GPU is available
 ```
 
-`results.ipynb` loads the prediction pickle and the train/val/test split, then plots
-a confusion matrix per split. Matrices are **row-normalized** (each row ÷ its total,
-so the diagonal is per-class recall) and annotated with recall and raw count per
-cell. Axes are labeled BC01–BC16 (class 0 → BC01, … class 15 → BC16).
+```bash
+# handle XXXX
+python model_inference.py \
+    --h5            Data/synthetics/signals/9fea1263-540e-4cc6-ad49-9e80276dca2b.h5 \
+    --model-weights Data/synthetics/model_weights/synthetics_classifier.pth \
+    --out           results/9fea1263-540e-4cc6-ad49-9e80276dca2b.pkl
+
+# handle YYYYYY
+python model_inference.py \
+    --h5            Data/synthetics/signals/266e1025-91a2-48d9-a168-6386828065f6.h5 \
+    --model-weights Data/synthetics/model_weights/synthetics_classifier.pth \
+    --out           results/266e1025-91a2-48d9-a168-6386828065f6.pkl
+```
+
+---
+
+### 4. Results — `results.ipynb`
+
+Loads the prediction pickle and plots confusion matrixes
+per experiment. Matrices are row-normalized (each row ÷ its total, so the diagonal is
+per-class recall) and annotated with recall and raw count per cell; axes are labeled
+BC01–BC16 (class 0 → BC01, … class 15 → BC16).
 
 ## Requirements
 
