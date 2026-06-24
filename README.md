@@ -26,16 +26,16 @@ To reproduce the exact results reported in the paper, run the three pipeline sta
 .
 ├── Data/                    # populated by data_preparation.sh
 │   ├── references/          # DNA_HS_DNA.fa (concatenated NRE+RE adapters) + index
-│   ├── results/             # per-experiment prediction pickles (written by inference)
+│   ├── results/             # per-experiment prediction pickles (written by model_inference.py)
 │   └── synthetics/          # downloaded BAMs, aligned BAMs, Pod5s, model_weights/, etc.
-│       └── model_weights/   # trained model checkpoint (.pth)
+│       ├── model_weights/   # trained model checkpoint (.pth)
+│       ├── basecalled/      # Unaligned bams (.pth)
+│       ├── aligned_bams/    # Aligned bams, produced by aliging unaligned bams to the DNA_HS_DNA reference (.pth)
+│       └── signals/         # default path for trimmed signals (.h5) - populated by signal_trimming.py
 ├── run_all.sh               # one-shot: runs every stage + writes figures
 ├── data_preparation.sh      # download → build reference → align barcodes
 ├── signal_trimming.py       # aligned BAM + POD5 → trimmed signals in HDF5
-├── model/                   # Model related scripts
-│   ├── factory/
-│   ├── transformer_multitask_zam_cls_only.py
-│   └── __init__.py
+├── model/...                  # Model related scripts
 ├── model_inference.py       # run a trained model on trimmed signals → predictions
 └── results.ipynb            # confusion matrices / per-class recall from predictions
 ```
