@@ -27,7 +27,7 @@ Usage: bash 1_data_preparation.sh [options]
   --only "KEYS"   only these <exp>/<run> keys, e.g. "PH009/266e1025"  [default: all runs]
   --data PATH     data root                                            [default ./Data]
   --threads N     threads for samtools / minimap2                      [default 32]
-  --dry-run       list what would be downloaded, then stop (nothing is written)
+  --dry-run       list what would be downloaded, then stop (nothing is downloaded)
   -h, --help      show this help and exit
 USAGE
 }
@@ -112,8 +112,8 @@ for line in "${RUNS[@]}"; do
     for ((i = 0; i < N_BARCODES; i++)); do
         bc=$(printf "%02d" $((FIRST_BC + i)))
 
-        # exactly one input BAM per barcode; a missing one would shift every
-        # later label (labels are assigned by sorted filename), so fail loudly
+        # exactly one input BAM per barcode; every run must have all 16, so a
+        # missing or ambiguous one fails loudly
         matches=("$in_dir/${HANDLE}"_*_barcode"${bc}".bam)
         if [[ ${#matches[@]} -ne 1 || ! -f "${matches[0]}" ]]; then
             echo "  !! $EXP/$RUN barcode${bc}: expected 1 BAM in $in_dir, found ${#matches[@]}" >&2

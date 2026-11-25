@@ -386,7 +386,7 @@ def run(bam_dir, pod5_dir, out_path, tnre, tre, min_len, chunk, workers,
         sig_buf.close()
         n_reads = int(valid_per_label.sum())
 
-    # same per-BAM stats as 2_signal_trimming.py (counts over reads found in POD5)
+    # per-BAM stats (counts over reads found in POD5)
     for label, name in sorted(zip(bam_labels, names)):
         print(
             f"[{name}] label={label} "

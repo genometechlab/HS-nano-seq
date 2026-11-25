@@ -282,7 +282,6 @@ def run_inference(args):
         if isinstance(length, torch.Tensor):
             length = length.to(device, non_blocking=True)
 
-        # NOTE: match this call to however EpochRunner invokes the model.
         outputs = model(signal=signal, length=length)
         logits = outputs["classification"]
         preds = torch.argmax(logits, dim=1).cpu().numpy()
@@ -326,8 +325,8 @@ def parse_args():
     p.add_argument("--h5", required=True, help="Path to the HDF5 signal file.")
     p.add_argument("--model-weights", required=True,
                    help="Path to a self-describing .pth (state_dict + config).")
-    p.add_argument("--out", default="inference_preds.pkl",
-                   help="Output pickle path. Default: inference_preds.pkl")
+    p.add_argument("--out", default="preds.pkl",
+                   help="Output pickle path. Default: preds.pkl")
     p.add_argument("--force-cpu", action="store_true",
                    help="Run on CPU even if a GPU is available.")
     p.add_argument("--batch-size", type=int, default=512)

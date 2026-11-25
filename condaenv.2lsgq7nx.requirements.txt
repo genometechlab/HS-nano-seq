@@ -1,0 +1,10 @@
+--extra-index-url https://download.pytorch.org/whl/cu126
+torch==2.6.0+cu126
+numpy==2.3.5
+pod5==0.3.23
+pysam==0.22.0
+h5py==3.13.0
+scikit-learn==1.6.1
+matplotlib==3.10.0
+tqdm==4.67.1
+awscli==1.42.76

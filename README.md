@@ -10,19 +10,6 @@ the HS-associated current segment plus the 12 nt HS–DNA junction window on eac
 side is isolated and fed to a transformer classifier. This repo covers the
 16-way synthetic-standard classification.
 
-To reproduce the exact results reported in the paper, run the four pipeline stages below in order.
-
-> [!WARNING]
-> You can reproduce everything in one shot with `bash run_all.sh` — it runs all four
-> stages in order (download/align → trim → infer → figures) for every run and writes the
-> confusion-matrix figures to `figures/`. It accepts options such as `--only`, `--data`,
-> `--threads`, `--trim-workers`, `--batch-size`, `--num-workers`, `--force-cpu`,
-> `--skip-prep`, `--skip-trimming`, and `--skip-inference` (see `bash run_all.sh --help`).
-> Otherwise, follow the stages below manually; the scripts are numbered in run order.
->
-> `--tnre` / `--tre` are exposed for experimentation only: the trained model supports
-> **only `--tnre 12 --tre 12`** (the default), and both scripts warn on anything else.
-
 ## Experiments
 
 Two experiments, two sequencing runs each. All of them are listed in
@@ -35,7 +22,7 @@ Two experiments, two sequencing runs each. All of them are listed in
 | PH015      | `cd8c3e45` | barcode09–24 → 0–15     | held-out                              |
 | PH015      | `78073ab4` | barcode09–24 → 0–15     | held-out                              |
 
-Runs are named by the first 8 characters of their MinKNOW run UUID.
+Runs are named by the first 8 characters of their run UUID.
 
 ## Repository structure
 
@@ -53,6 +40,7 @@ Runs are named by the first 8 characters of their MinKNOW run UUID.
 │       ├── signals.h5             # stage 2
 │       └── preds.pkl              # stage 3
 ├── experiments.sh                 # experiment / run table + data paths (shared config)
+├── environment.yml                # conda environment with the tested package versions
 ├── run_all.sh                     # one-shot: runs every stage + writes figures/
 ├── 1_data_preparation.sh          # download → build reference → align barcodes
 ├── 2_signal_trimming.py           # aligned BAM + POD5 → trimmed signals in HDF5
@@ -65,9 +53,61 @@ Runs are named by the first 8 characters of their MinKNOW run UUID.
 └── 4_results.ipynb                # the same figures inline, one section per run
 ```
 
-## Pipeline
+## Reproducing the paper results
 
-### 1. Data preparation — `1_data_preparation.sh`
+The pipeline has four stages: (1) download + align → (2) trim signals → (3) inference →
+(4) figures. You can run them in two ways:
+
+1. **All at once** with `run_all.sh`.
+2. **Step by step**, running each numbered script yourself.
+
+Both give the same outputs.
+
+### Option 1 — run everything with `run_all.sh`
+
+```bash
+bash run_all.sh                 # every run in experiments.sh, all four stages
+bash run_all.sh --help          # list the options
+```
+
+Each stage finishes for every run before the next stage starts. Stage 4 always runs and
+writes one confusion-matrix figure per run to `figures/`. The script also works under
+SLURM (`sbatch run_all.sh [options]`).
+
+| Argument            | Stage(s) | Default        | What it does |
+|---------------------|----------|----------------|--------------|
+| `--only "KEYS"`     | 1–4      | all runs       | Only process these `<exp>/<run>` keys, space-separated, e.g. `"PH009/266e1025 PH015/78073ab4"`. |
+| `--data PATH`       | 1–4      | `./Data`       | Data root: downloads, aligned BAMs, signals, predictions and the model all live under it. |
+| `--threads N`       | 1        | 32             | Threads for `samtools` / `minimap2` during alignment. |
+| `--skip-prep`       | 1        | off            | Skip stage 1 and reuse data that is already downloaded and aligned. |
+| `--tnre N`          | 2        | 12             | NRE (left) adapter nucleotides kept beside the HS segment. ⚠ The trained model only supports 12. |
+| `--tre N`           | 2        | 12             | RE (right) adapter nucleotides kept beside the HS segment. ⚠ The trained model only supports 12. |
+| `--min-len N`       | 2        | 18             | Minimum trimmed signal length to keep. Keep it ≥ the model's `chunk_size` (18), or stage 3 crashes on short reads. |
+| `--trim-workers N`  | 2        | 16             | Worker processes for signal trimming. |
+| `--skip-trimming`   | 2        | off            | Skip stage 2 and reuse existing `signals.h5` files. |
+| `--batch-size N`    | 3        | 512            | Reads per forward pass during inference. |
+| `--num-workers N`   | 3        | 4              | DataLoader worker processes during inference. |
+| `--force-cpu`       | 3        | off            | Run inference on CPU even if a GPU is available. |
+| `--skip-inference`  | 3        | off            | Skip stage 3 and reuse existing `preds.pkl` files. |
+| `-h`, `--help`      | –        |                | Show the help and exit. |
+
+`--tnre` / `--tre` exist for experimentation only. Both `run_all.sh` and
+`2_signal_trimming.py` print a warning for any value other than 12.
+
+Common uses:
+
+```bash
+bash 1_data_preparation.sh --dry-run                       # first, see what will be downloaded (~950 GB)
+bash run_all.sh --only "PH009/266e1025"                    # one run only (the smallest, ~8 GB)
+bash run_all.sh --skip-prep --skip-trimming --skip-inference   # just redraw figures from existing predictions
+```
+
+### Option 2 — run the stages step by step
+
+Run the numbered scripts in order. Each section below gives a stage's options and an
+example for one run.
+
+#### 1. Data preparation — `1_data_preparation.sh`
 
 For every run in `experiments.sh`, downloads from the public S3 bucket into
 `Data/raw/<exp>/<run>/`: the run's POD5 files, its MinKNOW reports, and the 16
@@ -80,7 +120,7 @@ It then writes the two DNA adapters (61 nt NRE + 60 nt RE, 121 nt total) as the
 `DNA_HS_DNA` reference into `Data/references/`, indexes it, and aligns each run's 16
 barcodes with `minimap2`, preserving the `mv` and `ts` tags that stage 2 relies on.
 Aligned BAMs land in `Data/processed/<exp>/<run>/aligned/`. A missing barcode BAM is
-an error, because it would shift every later label.
+an error, because every run is expected to have all 16 barcodes.
 
 ```
 --only "KEYS"   only these <exp>/<run> keys, e.g. "PH009/266e1025"   (default: all runs)
@@ -100,7 +140,7 @@ bash 1_data_preparation.sh --threads 32
 
 ---
 
-### 2. Signal trimming — `2_signal_trimming.py`
+#### 2. Signal trimming — `2_signal_trimming.py`
 
 Takes one run's aligned BAMs (one barcode = one label) plus that run's POD5
 files, maps each read's HS-flanking reference window back to raw signal via the
@@ -145,7 +185,7 @@ The output HDF5 has four datasets, all aligned by read position `i`:
 signals   int16   1D   all reads' trimmed signals, concatenated
 offsets   int64   1D   length n_reads + 1; read i == signals[offsets[i]:offsets[i+1]]
 read_ids  vlenstr 1D   length n_reads
-labels    int64   1D   length n_reads; 0-based label (0..15) by sorted BAM order
+labels    int64   1D   length n_reads; 0-based class (0..15) = barcode − --first-bc
 ```
 
 Labels come from the barcode number in each BAM's filename, never from file order:
@@ -156,7 +196,7 @@ an error; a missing one only gives a warning, since it can no longer shift the o
 
 ---
 
-### 3. Inference — `3_model_inference.py`
+#### 3. Inference — `3_model_inference.py`
 
 Streams every read in an HDF5 file through the trained checkpoint and writes a
 prediction dict to a pickle, `{ read_id: {"gt": int, "pred": int} }` (gt/pred are
@@ -182,7 +222,7 @@ python 3_model_inference.py \
 
 ---
 
-### 4. Results — `4_results.py` / `4_results.ipynb`
+#### 4. Results — `4_results.py` / `4_results.ipynb`
 
 `4_results.py` loads each run's `Data/processed/<exp>/<run>/preds.pkl` (runs come from
 `experiments.sh`, so `ONLY=...` works here too), writes one confusion matrix per run
@@ -213,6 +253,26 @@ predictions: `bash run_all.sh --skip-prep --skip-trimming --skip-inference`, or 
 
 - CLI tools: `awscli`, `samtools`, `minimap2`
 - Python: `pod5`, `pysam`, `h5py`, `numpy`, `tqdm`, `torch`, `scikit-learn`, `matplotlib`
+
+`environment.yml` pins the exact versions the pipeline was tested with:
+
+```bash
+conda env create -f environment.yml
+conda activate hs-nano-seq
+```
+
+It installs the CUDA 12.6 build of PyTorch; on a machine without a GPU, follow the
+comment in the file to install the CPU build instead.
+
+> [!NOTE]
+> **Tested on:** Linux (Ubuntu 20.04), bash 5.0, Python 3.12, one Tesla V100 16 GB
+> GPU (CUDA 12.6). A fresh clone run with `bash run_all.sh --only PH009/266e1025`
+> reproduced the stored predictions exactly.
+>
+> - **Linux only.** `run_all.sh` needs bash ≥ 4 (macOS ships 3.2), and signal trimming
+>   uses `fork` multiprocessing, which Windows doesn't support.
+> - **Disk:** the full download is ~950 GB, plus ~67 GB for the four `signals.h5` files.
+> - **GPU** is optional; inference falls back to CPU (`--force-cpu`), but is much slower.
 
 ## Data & citation
 
