@@ -16,7 +16,6 @@ warnings.filterwarnings("ignore", category=UserWarning)
 import os
 os.environ["HDF5_USE_FILE_LOCKING"] = "FALSE"
 
-import sys
 import time
 import pickle
 import argparse
@@ -28,8 +27,6 @@ import torch
 import torch.utils.data as data
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
-
-sys.path.append("../")
 
 from model import TransformerZAP
 
@@ -184,9 +181,8 @@ def load_checkpoint(weights_path, device):
     obj = torch.load(weights_path, map_location=device)
     if not (isinstance(obj, dict) and "config" in obj and "state_dict" in obj):
         raise SystemExit(
-            f"{weights_path} is not a self-describing checkpoint.\n"
-            f"Run upgrade_checkpoint.py on it first to attach the architecture "
-            f"config, then point --model_weights at the upgraded file."
+            f"{weights_path} is not a self-describing checkpoint "
+            f"(expected a dict with 'state_dict' and 'config')."
         )
     config = obj["config"]
     missing = [k for k in REQUIRED_CONFIG_KEYS if k not in config]
@@ -216,11 +212,8 @@ def load_state(model, state_dict):
     cleaned = {}
     for k, v in state_dict.items():
         cleaned[k[len("module."):] if k.startswith("module.") else k] = v
-    missing, unexpected = model.load_state_dict(cleaned, strict=False)
-    if missing:
-        print(f"[warn] missing keys: {len(missing)} (e.g. {missing[:3]})", flush=True)
-    if unexpected:
-        print(f"[warn] unexpected keys: {len(unexpected)} (e.g. {unexpected[:3]})", flush=True)
+    # strict: a key mismatch must fail, not silently run with random weights
+    model.load_state_dict(cleaned, strict=True)
     return model
 
 
@@ -332,8 +325,7 @@ def parse_args():
     )
     p.add_argument("--h5", required=True, help="Path to the HDF5 signal file.")
     p.add_argument("--model-weights", required=True,
-                   help="Path to a self-describing .pth (state_dict + config). "
-                        "Use upgrade_checkpoint.py to create one.")
+                   help="Path to a self-describing .pth (state_dict + config).")
     p.add_argument("--out", default="inference_preds.pkl",
                    help="Output pickle path. Default: inference_preds.pkl")
     p.add_argument("--force-cpu", action="store_true",

@@ -2,3 +2,15 @@ Data
 __pycache__/
 *.py[cod]
 *$py.class
+
+notebooks
+paper_plots
+
+# local backups / outputs
+weights_temp/
+confusion_matrix_*.png
+ph15_9mers_only.pkl
+figures/
+run_all*.log
+scratch.ipynb
+unsupervised.ipynb
