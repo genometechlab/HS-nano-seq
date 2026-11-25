@@ -1,0 +1,24 @@
+# Environment the pipeline was tested with (Linux, CUDA 12.6 GPU).
+#   conda env create -f environment.yml
+#   conda activate hs-nano-seq
+name: hs-nano-seq
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.12.0
+  - samtools=1.25
+  - minimap2=2.30
+  - ipykernel=6.29.5        # to run 4_results.ipynb in Jupyter / VS Code
+  - pip
+  - pip:
+      - --extra-index-url https://download.pytorch.org/whl/cu126
+      - torch==2.6.0+cu126  # CPU-only machine: use torch==2.6.0 and drop the line above
+      - numpy==2.3.5
+      - pod5==0.3.23
+      - pysam==0.22.0
+      - h5py==3.13.0
+      - scikit-learn==1.6.1
+      - matplotlib==3.10.0
+      - tqdm==4.67.1
+      - awscli==1.42.76
